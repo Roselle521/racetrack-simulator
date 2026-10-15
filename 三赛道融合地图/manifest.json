@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "kind": "telemetry_map_collection",
+  "privacy": "private_user_telemetry",
+  "tracks": [
+    {
+      "id": "zhejiang-gp",
+      "file": "zhejiang-gp.json",
+      "sha256": "bc8b19aa7b27795cd14c46f00c20c35b23e7c63a82ff75856095d6430de56db5",
+      "terrain_available": false,
+      "grid_points": 618,
+      "run_count": 1
+    },
+    {
+      "id": "zhuzhou-gp",
+      "file": "zhuzhou-gp.json",
+      "sha256": "2be2054ea4f66e4714391b3a805b0af37a18e160b0652c080b4e7a5444c9ac8d",
+      "terrain_available": true,
+      "grid_points": 743,
+      "run_count": 2
+    },
+    {
+      "id": "nordschleife-full",
+      "file": "nordschleife-full.json",
+      "sha256": "152265eabc8051cba2e643288ca5a5ea863d08419f1be58f4aeb3d4f617b6328",
+      "terrain_available": true,
+      "grid_points": 4128,
+      "run_count": 1
+    }
+  ]
+}
