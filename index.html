@@ -1312,7 +1312,7 @@ const Cockpit = (() => {
     const correspondence=CockpitPlayback.forwardWindow(g,p.s,150,axis.length_m);
     const opts={closed:true,length:axis.length_m,roadWidthM:picked.settings.roadWidthM};
     const ribbon=CG.roadRibbon(axis.points,axisStations,correspondence.start-65,correspondence.start+150,opts);
-    const local=point=>{const x=point[0]-p.point[0],y=point[1]-p.point[1];return [x*camera.right[0]+y*camera.right[1],x*camera.forward[0]+y*camera.forward[1]];};
+    const local=point=>{const x=point[0]-p.point[0],y=point[1]-p.point[1];return [x*camera.forward[0]+y*camera.forward[1],-x*camera.right[0]-y*camera.right[1]];};
     const bounds=ribbon.flatMap(row=>[local(row.leftCurb),local(row.rightCurb)]).concat([[0,0]]);
     const xs=bounds.map(q=>q[0]),ys=bounds.map(q=>q[1]),minx=Math.min(...xs)-5,maxx=Math.max(...xs)+5,miny=Math.min(...ys)-5,maxy=Math.max(...ys)+5;
     const scale=Math.min((w-32)/(maxx-minx),(h-32)/(maxy-miny));
@@ -1323,7 +1323,8 @@ const Cockpit = (() => {
       const a=CG.interpolatePath(g.points,stations,s,o),b=CG.interpolatePath(g.points,stations,s+2,o);
       segment(c,project(a),project(b),racingColor(g,best.result,s).color,3);
     }
-    const car=project(p.point);c.fillStyle='#fff';c.beginPath();c.moveTo(car[0],car[1]-7);c.lineTo(car[0]-4,car[1]+5);c.lineTo(car[0]+4,car[1]+5);c.closePath();c.fill();
+    const car=project(p.point);c.fillStyle='#fff';c.beginPath();c.moveTo(car[0]+7,car[1]);c.lineTo(car[0]-5,car[1]-4);c.lineTo(car[0]-5,car[1]+4);c.closePath();c.fill();
+    c.fillStyle='#a0b0c3';c.fillText('前方 →',14,21);
     const phase=racingColor(g,best.result,p.s);text('racingPlanState','当前：'+phase.label+' · '+F(p.speed,0)+' km/h · 沿优化线 '+F(p.s/1000,3)+' km');
   }
   function simulatedScene(){
