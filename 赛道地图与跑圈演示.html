@@ -1309,9 +1309,9 @@ const Cockpit = (() => {
   function racingPlan(best,p,camera){
     const {c,w,h}=ctx('racingPlan');if(w<1||h<1)return;
     const g=best.option.geometry,axis=road(),axisStations=axis.distance.slice(0,axis.points.length);
-    const correspondence=CockpitPlayback.forwardWindow(g,p.s,150,axis.length_m);
+    const correspondence=CockpitPlayback.forwardWindow(g,p.s-65,215,axis.length_m);
     const opts={closed:true,length:axis.length_m,roadWidthM:picked.settings.roadWidthM};
-    const ribbon=CG.roadRibbon(axis.points,axisStations,correspondence.start-65,correspondence.start+150,opts);
+    const ribbon=CG.roadRibbon(axis.points,axisStations,correspondence.start,correspondence.start+correspondence.span,opts);
     const local=point=>{const x=point[0]-p.point[0],y=point[1]-p.point[1];return [x*camera.forward[0]+y*camera.forward[1],-x*camera.right[0]-y*camera.right[1]];};
     const bounds=ribbon.flatMap(row=>[local(row.leftCurb),local(row.rightCurb)]).concat([[0,0]]);
     const xs=bounds.map(q=>q[0]),ys=bounds.map(q=>q[1]),minx=Math.min(...xs)-5,maxx=Math.max(...xs)+5,miny=Math.min(...ys)-5,maxy=Math.max(...ys)+5;
@@ -1320,7 +1320,7 @@ const Cockpit = (() => {
     roadSurface(c,project,ribbon,$('cockpitShowMeasured').checked);
     const stations=g.distance.slice(0,g.points.length),o={closed:true,length:g.length_m};
     if($('cockpitShowBest').checked)for(let s=p.s-65;s<p.s+150;s+=2){
-      const a=CG.interpolatePath(g.points,stations,s,o),b=CG.interpolatePath(g.points,stations,s+2,o);
+      const a=CG.interpolatePath(g.points,stations,s,o),b=CG.interpolatePath(g.points,stations,Math.min(s+2,p.s+150),o);
       segment(c,project(a),project(b),racingColor(g,best.result,s).color,3);
     }
     const car=project(p.point);c.fillStyle='#fff';c.beginPath();c.moveTo(car[0]+7,car[1]);c.lineTo(car[0]-5,car[1]-4);c.lineTo(car[0]-5,car[1]+4);c.closePath();c.fill();
