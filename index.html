@@ -36,7 +36,7 @@
     <p id="simExportStatus" class="small" role="status" aria-live="polite"></p>
   </section>
 </div>
-<div class="notice">演示模型：二维平路。车内回放按假设道路宽度优化走线，并计入车宽与边缘余量；道路固定在公开参考轴上。下方保留沿公开轴的参数对比。质量包含驾驶员与载荷；功率为动力系统峰值输出，再乘传动效率。实测高程和横坡尚未参与动力学计算。结果不能当作实测成绩或与实测圈段直接比较。</div>
+<div class="notice">演示模型：二维平路。车内回放按假设道路宽度优化走线，并计入车宽、边缘余量与可调的弯内压路肩上限；道路固定在公开参考轴上。下方保留沿公开轴的参数对比。质量包含驾驶员与载荷；功率为动力系统峰值输出，再乘传动效率。实测高程和横坡尚未参与动力学计算。结果不能当作实测成绩或与实测圈段直接比较。</div>
 <div id="vehicleCockpitMount" style="margin:24px 0 32px"></div>
 <section id="vehicleResult" hidden>
   <div class="card-head"><div><h2 id="vehicleResultTitle">演示模型结果</h2><p class="small" id="vehicleSnapshot"></p></div><button id="setVehicleBaseline">设为对比基准</button></div>
@@ -60,11 +60,13 @@
     <div class="tools racing-inputs">
       <label for="racingRoadWidth">假设道路宽度 / m</label><input id="racingRoadWidth" type="number" min="6" max="24" step="0.5" value="12">
       <label for="racingVehicleWidth">车宽 / m</label><input id="racingVehicleWidth" type="number" min="1.2" max="3" step="0.05" value="2">
-      <label for="racingEdgeMargin">每侧边缘余量 / m</label><input id="racingEdgeMargin" type="number" min="0.2" max="2" step="0.05" value="0.75">
+      <label for="racingEdgeMargin">不压肩区余量 / m</label><input id="racingEdgeMargin" type="number" min="0.2" max="2" step="0.05" value="0.75">
+      <label for="racingCurbAllowance">弯内压路肩上限 / m</label><input id="racingCurbAllowance" type="number" min="0" max="0.5" step="0.05" value="0.30">
+      <button id="racingCurbPreview" disabled>查看压肩位置</button>
     </div>
-    <p class="small">初始车宽和道路宽度均为示例。调整后点击“按当前车辆更新推荐线”；路肩不计入可用宽度。</p>
+    <p class="small">默认允许弯内侧车身边缘压入路肩最多 0.30 m，可调至 0–0.50 m；设为 0 即不压路肩。直道和弯外侧保留原余量。调整后点击“按当前车辆更新推荐线”。路肩宽度假设为 0.85 m，高度与抓地差异尚未建模。</p>
     <canvas id="racingPlan" role="img" aria-label="固定道路内的局部模拟走线、制动与加速区域"></canvas>
-    <div class="racing-plan-key"><span style="color:#fb827d">━ 减速</span><span style="color:#ffd28d">━ 速度基本稳定</span><span style="color:#64ffd0">━ 加速</span><span id="racingPlanState" class="small">随车内回放同步，显示前后弯道。</span></div>
+    <div class="racing-plan-key"><span style="color:#fb827d">━ 减速</span><span style="color:#ffd28d">━ 速度基本稳定</span><span style="color:#64ffd0">━ 加速</span><span style="color:#fff">┃ 车宽示意</span><span id="racingPlanState" class="small">随车内回放同步，显示前后弯道。</span></div>
   </section>
   <div class="details-grid"><section class="card"><div class="card-head"><div><h2>模拟推荐走线</h2><p class="small"><span id="cockpitMethod">比较有限候选，选择当前模型下用时最短的一条。</span></p></div><button id="cockpitRank">按当前车辆更新推荐线</button></div><p class="small" id="cockpitVehicle" style="margin-top:12px"></p><p id="cockpitRankStatus" role="status" aria-live="polite" style="margin:10px 0;color:var(--green)">进入视角后计算推荐线。</p><div id="cockpitRanking" class="vehicle-comparison"></div><p class="small" id="cockpitLineSource"></p></section><section class="card"><h2>视角与线路口径</h2><p id="cockpitClockNote" class="small" style="margin-top:12px">视点沿所选实测重建线移动，速度和回放时长来自所选记录。推荐线不会把实测回放改成模拟速度。</p><p id="cockpitWidthNote" class="small" style="margin-top:10px">路面显示宽度约 12 m，两侧红白路肩各约 0.85 m，均为示意，不代表实测边界或可压路肩区域。座舱及视点高度同为示意；未测量摄像机姿态、车身侧倾或方向盘转角。</p><div class="notice" style="margin-bottom:0">“模拟最优”仅指本次参与比较的候选，并非全局最佳线路。当前二维模型未计算坡度、横坡和载荷转移；候选可驾驶性尚未验证，不能直接作为实车驾驶指令。</div></section></div>
 </section>
@@ -521,6 +523,7 @@ DATA.tracks.forEach((d,i)=>{let b=node('button',['浙江国际赛道','株洲国
     resultCheck(r, track.id);
     const corridor = source.geometry_source === 'public_reference_corridor_optimization' || source.kind === 'public_reference_corridor_optimization';
     const optimization = source.optimization ?? null;
+    let curbAllowanceM = null;
     if (optimization !== null) {
       if (typeof optimization !== 'object' || Array.isArray(optimization)) fail('优化元数据格式无效。');
       text(optimization.algorithm, '优化算法');
@@ -528,6 +531,11 @@ DATA.tracks.forEach((d,i)=>{let b=node('button',['浙江国际赛道','株洲国
       if (!settings || typeof settings !== 'object' || Array.isArray(settings)) fail('缺少优化参数。');
       finite(settings.roadWidthM, '假设道路宽度', true); finite(settings.vehicleWidthM, '车辆宽度', true);
       if (finite(settings.edgeMarginM, '边界余量') < 0 || settings.roadWidthM < settings.vehicleWidthM + 2 * settings.edgeMarginM) fail('假设道路宽度无法容纳车辆与边界余量。');
+      // Older corridor snapshots had no curb setting and did not permit curb use.
+      curbAllowanceM = settings.curbAllowanceM === undefined ? 0 : finite(settings.curbAllowanceM, '允许压路肩宽度');
+      if (curbAllowanceM < 0 || curbAllowanceM > .5) fail('允许压路肩宽度须在 0 至 0.5 米之间。');
+      if (optimization.assumed_curb_width_m !== undefined && optimization.assumed_curb_width_m !== null && finite(optimization.assumed_curb_width_m, '假设路肩宽度', true) !== .85) fail('当前模型的假设路肩宽度须为 0.85 米。');
+      if (optimization.curb_policy !== undefined && optimization.curb_policy !== null && optimization.curb_policy !== 'inside_corners_only') fail('当前模型仅支持弯内路肩。');
       if (optimization.boundaries_measured !== undefined && typeof optimization.boundaries_measured !== 'boolean') fail('边界测绘状态无效。');
     }
     if (corridor && (r.uses_measured_line !== false || optimization?.boundaries_measured !== false)) fail('道路走廊优化必须明确为未测绘边界、非实测走线。');
@@ -602,6 +610,7 @@ DATA.tracks.forEach((d,i)=>{let b=node('button',['浙江国际赛道','株洲国
       corridor ? '推荐线是在固定公开参考道路和假设宽度走廊内参与比较的有限优化候选中模拟用时最短者；边界未经测绘，不是专业车手实测走线，也不代表全局最优。' :
         source.kind === 'best_candidate' ? '推荐线仅为参与比较的有限候选中模拟用时最短者；未验证真实赛道边界，也不代表全局最优。' : '公开参考线用于地图与模拟流程演示，不能直接与实测记录比较圈时。'
     ];
+    if (curbAllowanceM > 0) limitations.push('压路肩宽度仅为线路几何的允许值，不代表车辆实际压肩量；路肩宽度和可用区域是假设，未建模路肩摩擦、高度和冲击。');
     const payload = { schema_version: 1, export_type: 'racetrack_simulation', status: 'demo_only', model_version: r.model_version,
       track: copy(track), source: copy(source), vehicle: copy(v), summary, diagnostics: copy(r.diagnostics),
       baseline: baseline ? { vehicle: copy(baseline.vehicle), model_version: baseline.model_version, lap_time_s: baseline.lap_time_s, length_m: baseline.length_m, diagnostics: copy(baseline.diagnostics) } : null,
@@ -615,6 +624,8 @@ DATA.tracks.forEach((d,i)=>{let b=node('button',['浙江国际赛道','株洲国
       timing_basis: source.timing_basis, geometry_source: source.geometry_source ?? r.geometry_source ?? null,
       optimization_algorithm: optimization?.algorithm ?? null, assumed_road_width_m: optimization?.settings?.roadWidthM ?? null,
       vehicle_width_m: optimization?.settings?.vehicleWidthM ?? null, edge_margin_m: optimization?.settings?.edgeMarginM ?? null,
+      curb_allowance_m: curbAllowanceM, assumed_curb_width_m: optimization?.assumed_curb_width_m ?? null,
+      curb_policy: optimization?.curb_policy ?? null,
       boundaries_measured: optimization?.boundaries_measured ?? null,
       model_version: r.model_version, status: 'demo_only', vehicle_name: v.name,
       vehicle_is_demo: v.is_demo, drive_type: v.drive_type,
@@ -845,7 +856,8 @@ VehicleLab.init();
  */
 (function (root) {
   'use strict';
-  const VERSION = 'periodic-corridor-1.0';
+  const VERSION = 'periodic-corridor-1.1';
+  const CURB_WIDTH_M = .85;
   const mod = (a, n) => (a % n + n) % n;
   const clone = value => JSON.parse(JSON.stringify(value));
   function fail(message) { throw Error(message); }
@@ -863,11 +875,15 @@ VehicleLab.init();
   function settingsFrom(options) {
     const settings = {roadWidthM: options.roadWidthM ?? 12,
       vehicleWidthM: options.vehicleWidthM ?? 2, edgeMarginM: options.edgeMarginM ?? .75,
+      curbAllowanceM: options.curbAllowanceM === undefined ? 0 : options.curbAllowanceM, curbWidthM: CURB_WIDTH_M,
       controlSpacingM: 22, modelVersion: VERSION, boundariesMeasured: false};
     for (const key of ['roadWidthM', 'vehicleWidthM', 'edgeMarginM']) {
       if (typeof settings[key] !== 'number' || !Number.isFinite(settings[key]) ||
           (key === 'edgeMarginM' ? settings[key] < 0 : settings[key] <= 0)) fail(key + ' 设置无效。');
     }
+    if (typeof settings.curbAllowanceM !== 'number' || !Number.isFinite(settings.curbAllowanceM) ||
+        settings.curbAllowanceM < 0 || settings.curbAllowanceM > .5) fail('curbAllowanceM 必须在 0 至 0.5 m 之间。');
+    if (settings.curbAllowanceM > 0) settings.controlSpacingM = 10;
     if (settings.roadWidthM > 50 || settings.vehicleWidthM > 10 || settings.edgeMarginM > 20)
       fail('道路走廊参数超出本演示范围。');
     settings.maxOffsetM = (settings.roadWidthM - settings.vehicleWidthM) / 2 - settings.edgeMarginM;
@@ -922,12 +938,53 @@ VehicleLab.init();
   function interpolate(controls, bases) {
     return bases.map(b => b.indices.reduce((sum, index, j) => sum + controls[index] * b.w[j], 0));
   }
+  // Positive curvature bends towards the left normal. Only that inside edge
+  // is released. These are assumed curb locations, not surveyed curb surfaces.
+  // Bounds between road stations are defined by linear interpolation.
+  function corridorBounds(frame, settings) {
+    const lower = [], upper = [], base = settings.maxOffsetM;
+    for (const curvature of frame.road.curvature) {
+      const t = Math.max(0, Math.min(1, (Math.abs(curvature) - .002) / .004));
+      const release = settings.curbAllowanceM > 0 ?
+        (settings.edgeMarginM + settings.curbAllowanceM) * t * t * (3 - 2 * t) : 0;
+      lower.push(-base - (curvature < 0 ? release : 0));
+      upper.push(base + (curvature > 0 ? release : 0));
+    }
+    return {lower, upper};
+  }
+  function boundsAt(frame, station) {
+    const {road, bounds, n} = frame, s = mod(station, road.length_m);
+    let lo = 0, hi = n;
+    while (hi - lo > 1) {const middle = (lo + hi) >> 1; if (road.distance[middle] <= s) lo = middle; else hi = middle;}
+    const next = (lo + 1) % n, t = (s - road.distance[lo]) / road.lengths[lo];
+    return [bounds.lower[lo] * (1 - t) + bounds.lower[next] * t,
+      bounds.upper[lo] * (1 - t) + bounds.upper[next] * t];
+  }
+  // Intersect each control's entire support with the local corridor. A cubic
+  // B-spline is a convex combination of active controls; these conservative
+  // limits guarantee every interpolated point respects the linearly varying
+  // bounds, including between data samples and over the finish-line seam.
+  function controlBounds(frame, bases, count) {
+    const lower = Array(count).fill(-Infinity), upper = Array(count).fill(Infinity);
+    const restrict = (index, lo, hi) => {lower[index] = Math.max(lower[index], lo); upper[index] = Math.min(upper[index], hi);};
+    for (let i = 0; i < frame.n; i++) for (const index of bases[i].indices)
+      restrict(index, frame.bounds.lower[i], frame.bounds.upper[i]);
+    const h = frame.road.length_m / count;
+    for (let j = 0; j < count; j++) for (const end of [-2, 2]) {
+      const bounds = boundsAt(frame, (j + end) * h); restrict(j, bounds[0], bounds[1]);
+    }
+    return {lower, upper};
+  }
+  function clampControl(value, index, bounds) {
+    return Math.max(bounds.lower[index], Math.min(bounds.upper[index], value));
+  }
   function diagnosticsFor(frame, points, offsets, settings) {
     const n = frame.n, road = frame.road;
-    let maxOffset = 0, minForward = Infinity, maxChange = 0, seamChange = 0, minFold = Infinity;
+    let maxOffset = 0, minForward = Infinity, maxChange = 0, seamChange = 0, minFold = Infinity, maxBoundViolation = 0;
     const directions = [];
     for (let i = 0; i < n; i++) {
       maxOffset = Math.max(maxOffset, Math.abs(offsets[i]));
+      maxBoundViolation = Math.max(maxBoundViolation, frame.bounds.lower[i] - offsets[i], offsets[i] - frame.bounds.upper[i]);
       minFold = Math.min(minFold, 1 - road.curvature[i] * offsets[i]);
       const j = (i + 1) % n, a = points[i], b = points[j];
       const dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy);
@@ -943,10 +1000,14 @@ VehicleLab.init();
       if (i === 0) seamChange = angle;
     }
     const clearance = settings.roadWidthM / 2 - settings.vehicleWidthM / 2 - maxOffset;
-    if (maxOffset > settings.maxOffsetM + 1e-7 || minForward <= .15 || minFold <= .15)
+    if (maxBoundViolation > 1e-7 || minForward <= .15 || minFold <= .15)
       fail('候选走线不满足假设边界或前向连续性约束。');
     if (maxChange > Math.PI / 3) fail('候选走线方向变化过大。');
     return {max_abs_offset_m: maxOffset, min_assumed_edge_clearance_m: clearance,
+      max_curb_overlap_m: Math.max(0, -clearance), curb_allowance_m: settings.curbAllowanceM,
+      curb_width_m: settings.curbWidthM, curb_policy: 'inside_corners_only',
+      curb_locations_measured: false, curb_height_modeled: false, curb_grip_modeled: false,
+      curb_activation_curvature_per_m: [.002, .006], max_corridor_violation_m: maxBoundViolation,
       edge_margin_m: settings.edgeMarginM, min_forward_progress_ratio: minForward,
       min_normal_fold_factor: minFold, max_heading_change_deg: maxChange * 180 / Math.PI,
       seam_heading_change_deg: seamChange * 180 / Math.PI, boundaries_measured: false};
@@ -973,7 +1034,7 @@ VehicleLab.init();
       geometry_method: VERSION, line_uses_measured_terrain: false, closed: true}, diagnostics};
   }
   async function solveQuadratic(frame, bases, count, settings, profile, options) {
-    const {road, n} = frame, bound = settings.maxOffsetM;
+    const {road, n} = frame, bounds = frame.controlBounds;
     const rows = [], rowSums = new Float64Array(count), anchor = 2e-8;
     for (let i = 0; i < n; i++) {
       const b = bases[i], k = road.curvature[i], future = Math.abs(road.curvature[(i + Math.max(1, Math.round(40 / (road.length_m / n)))) % n]);
@@ -1002,7 +1063,7 @@ VehicleLab.init();
       const next = new Float64Array(count), nextMomentum = (1 + Math.sqrt(1 + 4 * momentum * momentum)) / 2;
       maximumChange = 0;
       for (let j = 0; j < count; j++) {
-        next[j] = Math.max(-bound, Math.min(bound, extrapolated[j] - gradient[j] / Math.max(rowSums[j], 1e-12)));
+        next[j] = clampControl(extrapolated[j] - gradient[j] / Math.max(rowSums[j], 1e-12), j, bounds);
         maximumChange = Math.max(maximumChange, Math.abs(next[j] - controls[j]));
         extrapolated[j] = next[j] + (momentum - 1) / nextMomentum * (next[j] - controls[j]);
       }
@@ -1018,7 +1079,9 @@ VehicleLab.init();
     const settings = settingsFrom(options), frame = prepareRoad(inputRoad), {road, n} = frame;
     const vehicleSnapshot = clone(vehicle), count = Math.max(12, Math.ceil(road.length_m / settings.controlSpacingM));
     const bases = road.distance.slice(0, n).map(s => basisAt(s, road.length_m, count));
-    const publicSettings = {roadWidthM: settings.roadWidthM, vehicleWidthM: settings.vehicleWidthM, edgeMarginM: settings.edgeMarginM};
+    frame.bounds = corridorBounds(frame, settings);
+    frame.controlBounds = controlBounds(frame, bases, count);
+    const publicSettings = {roadWidthM: settings.roadWidthM, vehicleWidthM: settings.vehicleWidthM, edgeMarginM: settings.edgeMarginM, curbAllowanceM: settings.curbAllowanceM};
     const rows = [], failures = [], controlsForRow = new Map();
     let evaluations = 0;
     const progress = (phase, extra = {}) => { if (options.onProgress) options.onProgress({phase, evaluations, ...extra}); };
@@ -1046,8 +1109,26 @@ VehicleLab.init();
     }
     progress('baseline');
     const baseline = await evaluate('road-baseline', '公共道路基准', null);
-    if (settings.maxOffsetM === 0) return {rows, failures, road, settings: publicSettings,
-      diagnostics: {model_version: VERSION, control_spacing_m: settings.controlSpacingM, max_allowed_offset_m: settings.maxOffsetM, evaluations, candidate_count: 0, baseline_time_s: baseline.time, best_time_s: baseline.time, improvement_s: 0}};
+    if (settings.maxOffsetM === 0 && settings.curbAllowanceM === 0) return {rows, failures, road, settings: publicSettings,
+      diagnostics: {model_version: VERSION, control_spacing_m: settings.controlSpacingM, max_allowed_offset_m: settings.maxOffsetM, evaluations, candidate_count: 0, baseline_time_s: baseline.time, best_time_s: baseline.time, improvement_s: 0,
+        reference_road_fixed: true, corridor_is_assumed: true, verified_professional_line: false,
+        ...baseline.option.diagnostics}};
+    // Keep the old, 22 m, no-curb optimum as an explicit alternative. Enabling
+    // more road must never lose the previous result merely because the finer
+    // curb-enabled spline has a different control lattice.
+    if (settings.curbAllowanceM > 0) {
+      progress('no-curb-reference');
+      const reference = await optimize(road, clone(vehicleSnapshot), {...options, curbAllowanceM: 0, onProgress: undefined});
+      evaluations += reference.diagnostics.evaluations;
+      const prior = reference.rows[0];
+      if (prior.option.blend !== 0) {
+        const offsets = prior.option.offsets_m.slice();
+        rows.push({...prior, option: {...prior.option, id: 'no-curb-reference', label: '不压路肩对照',
+          strategy: 'no-curb-reference', corridor_settings: {...publicSettings},
+          control_spacing_m: 22, diagnostics: diagnosticsFor(frame, prior.option.geometry.points, offsets, settings)}});
+      }
+      await pause(options);
+    }
     const profiles = [
       {id: 'flow', label: '连续弯曲率优化', path: .00010},
       {id: 'compact', label: '曲率与短路径平衡', path: .00065},
@@ -1056,20 +1137,20 @@ VehicleLab.init();
     for (let index = 0; index < profiles.length; index++) {
       const profile = profiles[index]; progress('curvature', {candidate: index + 1, candidates: profiles.length});
       const solution = await solveQuadratic(frame, bases, count, settings, profile, options);
-      await evaluate(profile.id, profile.label, solution.controls, {strategy: 'periodic-curvature-path', solver_iterations: solution.iterations});
+      await evaluate(profile.id, profile.label, solution.controls, {strategy: 'periodic-curvature-path', control_spacing_m: settings.controlSpacingM, solver_iterations: solution.iterations});
       await pause(options);
     }
     let best = rows.reduce((a, b) => a.time <= b.time ? a : b);
     // Retard the lateral pattern by 10/20 m rather than translating the road.
     // Full-lap simulation determines whether sacrificing entry benefits exit.
-    const seed = controlsForRow.get(best) || controlsForRow.get(rows.find(r => r.option.blend === null));
+    const seed = controlsForRow.get(best) || controlsForRow.get(rows.find(r => controlsForRow.has(r)));
     if (seed) for (const shift of [10, 20]) {
       progress('apex', {shift_m: shift});
       const delayed = Array.from({length: count}, (_, i) => {
         const b = basisAt(i * road.length_m / count - shift, road.length_m, count);
-        return b.indices.reduce((sum, j, k) => sum + seed[j] * b.w[k], 0);
+        return clampControl(b.indices.reduce((sum, j, k) => sum + seed[j] * b.w[k], 0), i, frame.controlBounds);
       });
-      await evaluate('late-' + shift, '晚弯心比较 · ' + shift + ' m', delayed, {strategy: 'late-apex', apex_delay_m: shift});
+      await evaluate('late-' + shift, '晚弯心比较 · ' + shift + ' m', delayed, {strategy: 'late-apex', control_spacing_m: settings.controlSpacingM, apex_delay_m: shift});
       await pause(options);
     }
     best = rows.reduce((a, b) => a.time <= b.time ? a : b);
@@ -1094,9 +1175,9 @@ VehicleLab.init();
             const distance = Math.abs(i * road.length_m / count - zones[zoneIndex]);
             const wrapped = Math.min(distance, road.length_m - distance);
             const bump = .85 * direction * Math.exp(-.5 * (wrapped / 32) ** 2);
-            return Math.max(-settings.maxOffsetM, Math.min(settings.maxOffsetM, value + bump));
+            return clampControl(value + bump, i, frame.controlBounds);
           });
-          const row = await evaluate('time-refinement', '当前车辆全圈时间优化', controls, {strategy: 'lap-time-refinement'}, false);
+          const row = await evaluate('time-refinement', '当前车辆全圈时间优化', controls, {strategy: 'lap-time-refinement', control_spacing_m: settings.controlSpacingM}, false);
           if (row && row.time < bestTime - .0001) {
             selectedControls = controls; bestTime = row.time; bestRefined = row; accepted++;
           }
@@ -1109,7 +1190,7 @@ VehicleLab.init();
     checkCancelled(options);
     progress('complete', {best_time_s: rows[0].time});
     return {rows, failures, road, settings: publicSettings, diagnostics: {
-      model_version: VERSION, control_spacing_m: settings.controlSpacingM, max_allowed_offset_m: settings.maxOffsetM, evaluations, candidate_count: rows.length - 1,
+      model_version: VERSION, control_spacing_m: settings.controlSpacingM, max_allowed_offset_m: frame.bounds.upper.reduce((maximum, value, i) => Math.max(maximum, value, -frame.bounds.lower[i]), 0), evaluations, candidate_count: rows.length - 1,
       baseline_time_s: baseline.time, best_time_s: rows[0].time,
       improvement_s: Math.max(0, baseline.time - rows[0].time),
       reference_road_fixed: true, corridor_is_assumed: true, verified_professional_line: false,
@@ -1132,7 +1213,7 @@ const Cockpit = (() => {
   const road=()=>DATA.simulation.geometries[D.id];
   function lineSettings(){
     const values={};
-    for(const [id,key,label] of [['racingRoadWidth','roadWidthM','道路宽度'],['racingVehicleWidth','vehicleWidthM','车宽'],['racingEdgeMargin','edgeMarginM','边缘余量']]){
+    for(const [id,key,label] of [['racingRoadWidth','roadWidthM','道路宽度'],['racingVehicleWidth','vehicleWidthM','车宽'],['racingEdgeMargin','edgeMarginM','边缘余量'],['racingCurbAllowance','curbAllowanceM','弯内压路肩上限']]){
       const input=$(id),value=Number(input.value);
       if(!input.value.trim()||!Number.isFinite(value)||value<Number(input.min)||value>Number(input.max))throw Error(label+'须在 '+input.min+' 至 '+input.max+' m 之间。');
       values[key]=value;
@@ -1149,6 +1230,7 @@ const Cockpit = (() => {
     for(const id of ['cockpitPlay','cockpitTimeline','cockpitReset'])$(id).disabled=unavailable;
     $('cockpitEmpty').hidden=!unavailable;
     $('cockpitTimeline').max=duration();
+    $('racingCurbPreview').disabled=!simulated||!picked||curbPeak().overlap<=.001;
     if(unavailable){text('cockpitSpeed','—');text('cockpitTime','待计算');text('cockpitDistance','—');text('cockpitGrade','二维平路演示');}
     if(simulated)text('cockpitTiming',picked?'推荐候选参考环 · 模拟用时 '+TM(duration()):'推荐线计算完成后可播放');
   }
@@ -1167,7 +1249,7 @@ const Cockpit = (() => {
     text('cockpitSubtitle',simulated?'固定道路 · 全圈走线优化 · 按当前车辆参数回放':'由 GPS 与实测时间重建的虚拟座舱 · 非实车摄像画面');
     text('cockpitBlueLabel',simulated?'道路参考轴':'实测重建线');text('cockpitBlueKey',simulated?'━ 道路参考轴':'━ 实测重建');
     text('cockpitMethod',simulated?'整圈曲率与路径优化，结合车辆动力学比较模拟用时。':'比较 GPS 衍生的五个几何混合候选。');
-    text('cockpitWidthNote',simulated?'道路位置固定在公开地图参考轴；宽度、车宽与边缘余量采用上方输入。路肩仅作显示，不参与走线优化。真实道路边缘尚未测绘。':'路面显示宽度约 12 m，两侧红白路肩各约 0.85 m，均为示意，不代表实测边界或可压路肩区域。');
+    text('cockpitWidthNote',simulated?'道路位置固定在公开地图参考轴；宽度、车宽与边缘余量采用上方输入。可在弯内侧按上限适度压路肩；直道和弯外侧保留余量。路肩宽度假设为 0.85 m，真实边界、高度与抓地差异尚未测量。':'路面显示宽度约 12 m，两侧红白路肩各约 0.85 m，均为示意，不代表实测边界或可压路肩区域。');
     text('cockpitSpeedKind',simulated?'km/h · 模拟':'km/h · 实测');
     text('cockpitSceneKind',simulated?'SIMULATED COCKPIT REPLAY':'GPS VIRTUAL REPLAY');
     text('cockpitReset',simulated?'回到模拟起点':'回到记录起点');
@@ -1195,7 +1277,7 @@ const Cockpit = (() => {
     if(result.mode==='racing'){
       const settings=result.settings,offset=best.option.offsets_m||best.option.geometry.lateral_offset_m||[];
       const maximum=offset.length?Math.max(...offset.map(Math.abs)):0;
-      $('cockpitRanking').append(node('p','假设道路宽 '+F(settings.roadWidthM,1)+' m · 车宽 '+F(settings.vehicleWidthM,2)+' m · 每侧预留 '+F(settings.edgeMarginM,2)+' m。所选走线最大横向偏移 '+F(maximum,2)+' m；此余量仅相对于假设边界。'));
+      $('cockpitRanking').append(node('p','假设道路宽 '+F(settings.roadWidthM,1)+' m · 车宽 '+F(settings.vehicleWidthM,2)+' m · 不压肩区余量 '+F(settings.edgeMarginM,2)+' m · 弯内压肩上限 '+F(settings.curbAllowanceM,2)+' m。所选走线最大横向偏移 '+F(maximum,2)+' m，最大压肩 '+F(curbPeak().overlap,2)+' m；均相对于假设边界。'));
       text('cockpitSceneState','固定道路 '+F(settings.roadWidthM,1)+' m · 宽度假设');
     }else $('cockpitRanking').append(node('p','所选计算线路距原始基准线的最大最近距离约 '+F(best.option.prepared_max_distance_to_source_base_m,2)+' m；平滑后可能超出原始 1 m 偏移假设，赛道边界尚未验证。'));
     if(result.failures.length)$('cockpitRanking').append(node('p',result.failures.length+' 个候选未通过计算，未列入推荐。'));
@@ -1300,6 +1382,17 @@ const Cockpit = (() => {
     if(picked&&$('cockpitShowBest').checked){c.beginPath();picked.renderLine.points.forEach((p,i)=>i?c.lineTo(...project(p)):c.moveTo(...project(p)));c.closePath();c.strokeStyle='#64ffd0';c.lineWidth=.8;c.stroke();}
     c.beginPath();c.arc(...project(car),3.5,0,2*Math.PI);c.fillStyle='#fff';c.fill();
   }
+  function curbPeak(){
+    if(!picked||picked.mode!=='racing')return {index:0,overlap:0};
+    const offsets=picked.rows[0].option.geometry.lateral_offset_m||[],settings=picked.settings;
+    return offsets.reduce((peak,offset,index)=>{const overlap=Math.max(0,Math.abs(offset)+settings.vehicleWidthM/2-settings.roadWidthM/2);return overlap>peak.overlap?{index,overlap}:peak;},{index:0,overlap:0});
+  }
+  function curbAt(g,s){
+    const at=((s%g.length_m)+g.length_m)%g.length_m,n=g.points.length;
+    let lo=0,hi=n;while(hi-lo>1){const mid=(lo+hi)>>1;if(g.distance[mid]<=at)lo=mid;else hi=mid;}
+    const f=(at-g.distance[lo])/g.lengths[lo],offsets=g.lateral_offset_m||[],offset=(offsets[lo]||0)*(1-f)+(offsets[(lo+1)%n]||0)*f;
+    return Math.max(0,Math.abs(offset)+picked.settings.vehicleWidthM/2-picked.settings.roadWidthM/2);
+  }
   function racingColor(g,r,s){
     const at=((s%g.length_m)+g.length_m)%g.length_m;
     let lo=0,hi=g.points.length;while(hi-lo>1){const mid=(lo+hi)>>1;if(g.distance[mid]<=at)lo=mid;else hi=mid;}
@@ -1323,9 +1416,13 @@ const Cockpit = (() => {
       const a=CG.interpolatePath(g.points,stations,s,o),b=CG.interpolatePath(g.points,stations,Math.min(s+2,p.s+150),o);
       segment(c,project(a),project(b),racingColor(g,best.result,s).color,3);
     }
+    // This cross-section uses the same road normal as the width constraint.
+    const axisPose=CG.pose(axis.points,axisStations,CockpitPlayback.forwardWindow(g,p.s,0,axis.length_m).start,{closed:true,length:axis.length_m,eyeHeight:0});
+    const half=picked.settings.vehicleWidthM/2,left=project([p.point[0]-axisPose.right[0]*half,p.point[1]-axisPose.right[1]*half]),right=project([p.point[0]+axisPose.right[0]*half,p.point[1]+axisPose.right[1]*half]);
+    segment(c,left,right,'#fff',3);
     const car=project(p.point);c.fillStyle='#fff';c.beginPath();c.moveTo(car[0]+7,car[1]);c.lineTo(car[0]-5,car[1]-4);c.lineTo(car[0]-5,car[1]+4);c.closePath();c.fill();
     c.fillStyle='#a0b0c3';c.fillText('前方 →',14,21);
-    const phase=racingColor(g,best.result,p.s);text('racingPlanState','当前：'+phase.label+' · '+F(p.speed,0)+' km/h · 沿优化线 '+F(p.s/1000,3)+' km');
+    const phase=racingColor(g,best.result,p.s);text('racingPlanState','当前：'+phase.label+' · '+F(p.speed,0)+' km/h · 沿优化线 '+F(p.s/1000,3)+' km · '+(curbAt(g,p.s)>.001?'当前压肩 '+F(curbAt(g,p.s),2)+' m':'当前未压路肩'));
   }
   function simulatedScene(){
     const {c,w,h}=ctx('cockpitCanvas');if(w<1||h<1)return;
@@ -1340,11 +1437,11 @@ const Cockpit = (() => {
     const ribbon=CG.roadRibbon(axis.points,axis.distance.slice(0,axis.points.length),window.start-12,window.start+window.span,{closed:true,length:axis.length_m,roadWidthM:picked.settings.roadWidthM});
     roadSurface(c,project,ribbon,$('cockpitShowMeasured').checked);
     if($('cockpitShowBest').checked){
-      // Clip the overlay to visible asphalt. A fixed screen-width stroke would
+      // Clip the overlay to the fixed road and assumed curbs. A fixed screen-width stroke would
       // otherwise spill over distant hairpins and look like a line in the sky.
       c.save();c.beginPath();
       for(let i=1;i<ribbon.length;i++){
-        const a=ribbon[i-1],b=ribbon[i],poly=[a.left,a.right,b.right,b.left].map(project);
+        const a=ribbon[i-1],b=ribbon[i],poly=[a.leftCurb,a.rightCurb,b.rightCurb,b.leftCurb].map(project);
         if(poly.some(point=>!point))continue;
         poly.forEach((point,j)=>j?c.lineTo(point[0],point[1]):c.moveTo(point[0],point[1]));c.closePath();
       }
@@ -1364,7 +1461,7 @@ const Cockpit = (() => {
     if(!picked||picked.mode!=='racing'||ranking||picked.trackId!==D.id)return null;
     try{if(signature(picked.vehicle)!==signature(vehicle())||JSON.stringify(picked.settings)!==JSON.stringify(lineSettings()))return null;}catch{return null;}
     const best=picked.rows[0];
-    return {source:{kind:'best_candidate',label:'车内回放优化线 · '+best.option.label,timing_basis:'closed_public_reference_corridor_flying_lap',geometry_source:'public_reference_corridor_optimization',optimization:{algorithm:'periodic_corridor_racing_line',settings:picked.settings,diagnostics:picked.diagnostics,boundaries_measured:false}},geometry:best.option.geometry,result:{...best.result,track_id:D.id},baseline:null,
+    return {source:{kind:'best_candidate',label:'车内回放优化线 · '+best.option.label,timing_basis:'closed_public_reference_corridor_flying_lap',geometry_source:'public_reference_corridor_optimization',optimization:{algorithm:'periodic_corridor_racing_line',settings:picked.settings,diagnostics:picked.diagnostics,selected_line_diagnostics:best.option.diagnostics,curb_policy:'inside_corners_only',assumed_curb_width_m:.85,boundaries_measured:false}},geometry:best.option.geometry,result:{...best.result,track_id:D.id},baseline:null,
       candidateRanking:picked.rows.map(row=>({id:row.option.id,label:row.option.label,blend:row.option.blend,lap_time_s:row.time,length_m:row.option.geometry.length_m}))};
   }
   function init(){
@@ -1373,7 +1470,8 @@ const Cockpit = (() => {
     $('cockpitReset').onclick=()=>{halt();setClock(0);draw();};$('cockpitTimeline').oninput=event=>{halt();setClock(Number(event.target.value));draw();};
     for(const id of ['cockpitShowMeasured','cockpitShowBest','cockpitShowCurbs','cockpitFov'])$(id).onchange=draw;
     $('cockpitRank').onclick=rank;
-    for(const id of ['racingRoadWidth','racingVehicleWidth','racingEdgeMargin'])$(id).oninput=()=>{if(simulated){token++;ranking=false;clearRecommendation('走廊参数已变化，请更新推荐线。');}};
+    $('racingCurbPreview').onclick=()=>{if(simulated&&picked){const peak=curbPeak();if(peak.overlap>.001){halt();simulationTime=picked.rows[0].result.time_s[peak.index];draw();$('racingPlan').scrollIntoView({behavior:'smooth',block:'center'});}}};
+    for(const id of ['racingRoadWidth','racingVehicleWidth','racingEdgeMargin','racingCurbAllowance'])$(id).oninput=()=>{if(simulated){token++;ranking=false;clearRecommendation('走廊参数已变化，请更新推荐线。');}};
     $('viewVehicleCockpit').onclick=()=>{$('cockpitWorkspace').scrollIntoView({behavior:'smooth',block:'start'});};
     window.addEventListener('trackchange',changed);
     window.addEventListener('runchange',()=>{halt();syncControls();if(!simulated)draw();});
